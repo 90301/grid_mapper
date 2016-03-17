@@ -467,7 +467,21 @@ public:
     // TODO: parse laser data and update occupancy grid canvas
     //       (use CELL_OCCUPIED, CELL_UNKNOWN, CELL_FREE, and CELL_ROBOT values)
     // (see http://www.ros.org/doc/api/sensor_msgs/html/msg/LaserScan.html)
-
+    
+    //get laser hits
+    std::vector<double> x_strikes;
+    std::vector<double> y_strikes;
+    IUtils::getLaserHits(msg,x_strikes,y_strikes,x,y,heading);
+    for (int i=0;i<x_strikes.size();i++) {
+      double strike_x = x_strikes[i];
+      double strike_y = y_strikes[i];
+      int cell_x = strike_x;
+      int cell_y = strike_y;
+      plotImg(cell_x, cell_y, CELL_OCCUPIED);
+      
+      
+    }
+    
 
 
   };
