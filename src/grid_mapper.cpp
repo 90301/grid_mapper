@@ -326,8 +326,8 @@ namespace IUtils {
   }
 
   const static bool REMOVE_LONG_RANGE_HITS = true;
-  const static double LONG_RANGE_HIT = 5; //the furthest hit we should consider.
-
+  const static double LONG_RANGE_HIT = 3; //the furthest hit we should consider.
+  const static bool DEBUG_LASER_UTILS = true;
   /*
    * Get the laser hits in x and y coordinates
    *
@@ -368,12 +368,41 @@ namespace IUtils {
         y_strikes.push_back(y_hit);
       }
 
-    }//end for loop
+    }//end for loopcallback
+    //debug stuff
+    int strikeSize = x_strikes.size();
+    debugOutput("Strikes found: " + toString(strikeSize),DEBUG_LASER_UTILS);
+    
+    
+    
   } //end get Laser Hits
 
 
 }; //END UTILS
 
+namespace IUtilsUnitTests {
+  using namespace IUtils;
+  void testConvertAngle() {
+    int CYCLES = 100;
+    double angleIncrement = M_PI/CYCLES*2;
+    double startAngle = -M_PI/2;
+    
+    for (int i=0;i<CYCLES;i++) {
+    double x =1000;
+    double y = 1000;
+    
+    double angle = startAngle - i * angleIncrement;
+    double mag = 10;
+    double startX = 10;
+    double startY = 10;
+    IUtils::convertAngleToXY(x,y,startX,startY,angle,mag);
+    IUtils::debugOutput(IUtils::toString(x,y),true);
+    int cellX = startX;
+    int cellY = startY;
+    IUtils::debugOutput(IUtils::toString(cellX) + " , " + IUtils::toString(cellY),true);
+    }
+  }
+}
 
 using namespace boost::posix_time;
 
@@ -464,6 +493,7 @@ public:
 
   void laserCallback(const sensor_msgs::LaserScan::ConstPtr& msg)
   {
+    ROS_INFO_STREAM("Got laser callback");
     // TODO: parse laser data and update occupancy grid canvas
     //       (use CELL_OCCUPIED, CELL_UNKNOWN, CELL_FREE, and CELL_ROBOT values)
     // (see http://www.ros.org/doc/api/sensor_msgs/html/msg/LaserScan.html)
@@ -477,7 +507,8 @@ public:
       double strike_y = y_strikes[i];
       int cell_x = strike_x;
       int cell_y = strike_y;
-      plotImg(cell_x, cell_y, CELL_OCCUPIED);
+      
+      //plot(cell_x, cell_y, CELL_OCCUPIED);
       
       
     }
@@ -518,7 +549,9 @@ public:
       plotImg(0, canvas.rows - 1, CELL_UNKNOWN);
       plotImg(canvas.cols - 1, 0, CELL_FREE);
       plotImg(canvas.cols - 1, canvas.rows - 1, CELL_ROBOT);
-
+      
+      plot(x, y, CELL_FREE); 
+      
       if (USE_RANDOM_WALK) {
         
       }
@@ -566,6 +599,10 @@ protected:
 
 int main(int argc, char **argv)
 {
+  
+  //UNIT TESTING
+  IUtilsUnitTests::testConvertAngle();
+  
   int width, height;
   bool printUsage = false;
 
