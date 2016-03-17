@@ -328,6 +328,7 @@ namespace IUtils {
   const static bool REMOVE_LONG_RANGE_HITS = true;
   const static double LONG_RANGE_HIT = 3; //the furthest hit we should consider.
   const static bool DEBUG_LASER_UTILS = true;
+
   /*
    * Get the laser hits in x and y coordinates
    *
@@ -361,21 +362,21 @@ namespace IUtils {
       double x_hit = DEFAULT_LASER_STRIKE;
       double y_hit = DEFAULT_LASER_STRIKE;
       double mag = msg->ranges[currIndex];
-      
+
       if ((REMOVE_LONG_RANGE_HITS && mag < LONG_RANGE_HIT) || !REMOVE_LONG_RANGE_HITS) {
         convertAngleToXY(x_hit, y_hit, robot_x, robot_y, trueAngle, mag);
         x_strikes.push_back(x_hit);
         y_strikes.push_back(y_hit);
-        IUtils::debugOutput("LASER HIT: " + toString(x_hit,y_hit),DEBUG_LASER_UTILS,"LaserOutput",50);
+        IUtils::debugOutput("LASER HIT: " + toString(x_hit, y_hit), DEBUG_LASER_UTILS, "LaserOutput", 50);
       }
 
     }//end for loopcallback
     //debug stuff
     int strikeSize = x_strikes.size();
-    debugOutput("Strikes found: " + toString(strikeSize),DEBUG_LASER_UTILS);
-    
-    
-    
+    debugOutput("Strikes found: " + toString(strikeSize), DEBUG_LASER_UTILS);
+
+
+
   } //end get Laser Hits
 
 
@@ -383,24 +384,26 @@ namespace IUtils {
 
 namespace IUtilsUnitTests {
   using namespace IUtils;
-  void testConvertAngle() {
+
+  void testConvertAngle()
+  {
     int CYCLES = 100;
-    double angleIncrement = M_PI/CYCLES*2;
-    double startAngle = -M_PI/2;
-    
-    for (int i=0;i<CYCLES;i++) {
-    double x =1000;
-    double y = 1000;
-    
-    double angle = startAngle - i * angleIncrement;
-    double mag = 10;
-    double startX = 10;
-    double startY = 10;
-    IUtils::convertAngleToXY(x,y,startX,startY,angle,mag);
-    IUtils::debugOutput(IUtils::toString(x,y),true);
-    int cellX = x;
-    int cellY = y;
-    IUtils::debugOutput(IUtils::toString(cellX) + " , " + IUtils::toString(cellY),true);
+    double angleIncrement = M_PI / CYCLES * 2;
+    double startAngle = -M_PI / 2;
+
+    for (int i = 0; i < CYCLES; i++) {
+      double x = 1000;
+      double y = 1000;
+
+      double angle = startAngle - i * angleIncrement;
+      double mag = 10;
+      double startX = 10;
+      double startY = 10;
+      IUtils::convertAngleToXY(x, y, startX, startY, angle, mag);
+      IUtils::debugOutput(IUtils::toString(x, y), true);
+      int cellX = x;
+      int cellY = y;
+      IUtils::debugOutput(IUtils::toString(cellX) + " , " + IUtils::toString(cellY), true);
     }
   }
 }
@@ -416,6 +419,8 @@ public:
   GridMapper(ros::NodeHandle& nh, int width, int height) :
   canvas(height, width, CV_8UC1)
   {
+    
+    
     // Initialize random time generator
     srand(time(NULL));
 
@@ -440,6 +445,10 @@ public:
     // Create resizeable named window
     cv::namedWindow("Occupancy Grid Canvas", \
       CV_WINDOW_NORMAL | CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+    
+    //RANDOM WALK
+    fsm = FSM_MOVE_FORWARD;
+    
   };
 
 
@@ -498,22 +507,44 @@ public:
     // TODO: parse laser data and update occupancy grid canvas
     //       (use CELL_OCCUPIED, CELL_UNKNOWN, CELL_FREE, and CELL_ROBOT values)
     // (see http://www.ros.org/doc/api/sensor_msgs/html/msg/LaserScan.html)
-    
+
     //get laser hits
     std::vector<double> x_strikes;
     std::vector<double> y_strikes;
-    IUtils::getLaserHits(msg,x_strikes,y_strikes,x,y,heading);
-    for (int i=0;i<x_strikes.size();i++) {
+    IUtils::getLaserHits(msg, x_strikes, y_strikes, x, y, heading);
+    for (int i = 0; i < x_strikes.size(); i++) {
       double strike_x = x_strikes[i];
       double strike_y = y_strikes[i];
       int cell_x = strike_x;
       int cell_y = strike_y;
-      
+
       //plot(cell_x, cell_y, CELL_OCCUPIED);
-      
-      
-    }
-    
+
+
+      //RANDOM WALK STUFF
+      if (USE_RANDOM_WALK) {
+
+
+
+        if (fsm == FSM_MOVE_FORWARD) {
+          double minRads = (MIN_SCAN_ANGLE_RAD - msg->angle_min) / msg->angle_increment;
+          double maxRads = (MAX_SCAN_ANGLE_RAD - msg->angle_min) / msg->angle_increment;
+          unsigned int minIndex = (int) ceil((minRads));
+          unsigned int maxIndex = ceil(maxRads);
+          float closestRange = 100000;
+          for (unsigned int currIndex = minIndex; currIndex < maxIndex; currIndex++) {
+            //std::cout<<"Loop Start!"<<std::endl;
+            if (msg->ranges[currIndex] < closestRange) {
+
+              //std::cout<<"Index Loop Internal!"<<std::endl;
+              closestRange = msg->ranges[currIndex];
+            }
+          }
+        }
+
+      }//end random walk code
+    }//end laser callback
+
 
 
   };
@@ -550,11 +581,24 @@ public:
       plotImg(0, canvas.rows - 1, CELL_UNKNOWN);
       plotImg(canvas.cols - 1, 0, CELL_FREE);
       plotImg(canvas.cols - 1, canvas.rows - 1, CELL_ROBOT);
-      
-      plot(x, y, CELL_FREE); 
-      
+
+      plot(x, y, CELL_FREE);
+
       if (USE_RANDOM_WALK) {
-        
+        if (fsm == FSM_MOVE_FORWARD) {
+          move(FORWARD_SPEED_MPS, 0);
+        }
+        if (fsm == FSM_ROTATE) {
+          move(0, ROTATE_SPEED_RADPS);
+          if (ros::Time::now() > rotateStartTime + rotateDuration) {
+            fsm = FSM_MOVE_FORWARD;
+            ROS_INFO_STREAM("No longer rotating");
+          } else {
+            ROS_INFO_STREAM("TIME LEFT: " << ros::Time::now() - (rotateStartTime + rotateDuration));
+          }
+
+        }
+
       }
 
 
@@ -577,6 +621,18 @@ public:
   const static double FORWARD_SPEED_MPS = 2.0;
   const static double ROTATE_SPEED_RADPS = M_PI / 2;
 
+  int fsm;
+  const static int FSM_MOVE_FORWARD = 1001;
+  const static int FSM_ROTATE = 2001;
+
+  const static double MIN_SCAN_ANGLE_RAD = -45.0 / 180 * M_PI;
+  const static double MAX_SCAN_ANGLE_RAD = +45.0 / 180 * M_PI;
+  const static float PROXIMITY_RANGE_M = 2;
+
+
+  const static int STARTING_ANGLE = 180;
+  const static int RANDOM_ANGLE = 20;
+
   const static int SPIN_RATE_HZ = 30;
 
   const static char CELL_OCCUPIED = 0;
@@ -596,6 +652,10 @@ protected:
 
   cv::Mat canvas; // Occupancy grid canvas
   boost::mutex canvasMutex; // Mutex for occupancy grid canvas object
+  //RANDOM WALK
+  ros::Time rotateStartTime; // Start time of the rotation
+  ros::Duration rotateDuration;
+
 };
 
 
@@ -603,19 +663,20 @@ protected:
 
 
 const static bool ONLY_UNIT_TEST = false;
+
 int main(int argc, char **argv)
 {
-  
+
   //UNIT TESTING
-  
+
   IUtilsUnitTests::testConvertAngle();
-  
-  
+
+
   if (ONLY_UNIT_TEST) {
     return 0;
   }
-  
-  
+
+
   int width, height;
   bool printUsage = false;
 
