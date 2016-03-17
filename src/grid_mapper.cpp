@@ -296,7 +296,7 @@ namespace IUtils {
   /*
    * Inhaler Laser Utils
    * >>LASER_UTILS<<
-   * 
+   * <>>>>>>_<<<<<<>
    */
   const static double DEFAULT_LASER_STRIKE = 5000;
 
@@ -361,11 +361,12 @@ namespace IUtils {
       double x_hit = DEFAULT_LASER_STRIKE;
       double y_hit = DEFAULT_LASER_STRIKE;
       double mag = msg->ranges[currIndex];
-
-      if (REMOVE_LONG_RANGE_HITS && mag > LONG_RANGE_HIT || !REMOVE_LONG_RANGE_HITS) {
+      
+      if ((REMOVE_LONG_RANGE_HITS && mag < LONG_RANGE_HIT) || !REMOVE_LONG_RANGE_HITS) {
         convertAngleToXY(x_hit, y_hit, robot_x, robot_y, trueAngle, mag);
         x_strikes.push_back(x_hit);
         y_strikes.push_back(y_hit);
+        IUtils::debugOutput("LASER HIT: " + toString(x_hit,y_hit),DEBUG_LASER_UTILS,"LaserOutput",50);
       }
 
     }//end for loopcallback
@@ -397,8 +398,8 @@ namespace IUtilsUnitTests {
     double startY = 10;
     IUtils::convertAngleToXY(x,y,startX,startY,angle,mag);
     IUtils::debugOutput(IUtils::toString(x,y),true);
-    int cellX = startX;
-    int cellY = startY;
+    int cellX = x;
+    int cellY = y;
     IUtils::debugOutput(IUtils::toString(cellX) + " , " + IUtils::toString(cellY),true);
     }
   }
@@ -597,11 +598,23 @@ protected:
   boost::mutex canvasMutex; // Mutex for occupancy grid canvas object
 };
 
+
+
+
+
+const static bool ONLY_UNIT_TEST = false;
 int main(int argc, char **argv)
 {
   
   //UNIT TESTING
+  
   IUtilsUnitTests::testConvertAngle();
+  
+  
+  if (ONLY_UNIT_TEST) {
+    return 0;
+  }
+  
   
   int width, height;
   bool printUsage = false;
