@@ -9,6 +9,14 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <tf/transform_listener.h>
+#include <utility>
+#include "inhaler_gui/draw_line.h"
+#include "inhaler_gui/draw_text.h"
+#include "inhaler_gui/draw_text_p.h"
+#include "inhaler_gui/draw_line_p.h"
+
+
+  const static double CELL_MULTIPLIER = 20;
 
 
 /*
@@ -234,6 +242,14 @@ namespace IUtils {
     return s.str();
   };
 
+  std::string
+  toString(int& inputX, int& inputY)
+  {
+    std::ostringstream s;
+    s << inputX << " , " << inputY;
+    return s.str();
+  };
+
   /*
    * Variable tracking
    */
@@ -307,8 +323,8 @@ namespace IUtils {
           const double x_start, const double y_start,
           const double angle, const double mag)
   {
-    x = x_start + cos(angle) * mag;
-    y = y_start + sin(angle) * mag;
+    x = x_start - sin(angle) * mag;
+    y = y_start + cos(angle) * mag;
   }
   const static double MAX_ANGLE = 1 * M_PI;
   const static double MIN_ANGLE = -1 * M_PI;
@@ -326,9 +342,10 @@ namespace IUtils {
   }
 
   const static bool REMOVE_LONG_RANGE_HITS = true;
-  const static double LONG_RANGE_HIT = 3; //the furthest hit we should consider.
+  const static double LONG_RANGE_HIT = 15; //the furthest hit we should consider.
   const static bool DEBUG_LASER_UTILS = true;
-
+  
+  static double cordMultiplier = 2;
   /*
    * Get the laser hits in x and y coordinates
    *
@@ -339,7 +356,10 @@ namespace IUtils {
   {
     //gets the x/y coordinates of laser
 
-
+    //currently set this manually
+    if (cordMultiplier<=0 || cordMultiplier >1000 )
+    cordMultiplier = 1.0;
+    
     double minRads = msg->angle_min;
     double maxRads = msg->angle_max;
     double maxDist = msg->range_max;
@@ -363,11 +383,16 @@ namespace IUtils {
       double y_hit = DEFAULT_LASER_STRIKE;
       double mag = msg->ranges[currIndex];
 
-      if ((REMOVE_LONG_RANGE_HITS && mag < LONG_RANGE_HIT) || !REMOVE_LONG_RANGE_HITS) {
+      if ((REMOVE_LONG_RANGE_HITS && (mag < LONG_RANGE_HIT ||  mag<=maxDist-1)) || !REMOVE_LONG_RANGE_HITS) {
         convertAngleToXY(x_hit, y_hit, robot_x, robot_y, trueAngle, mag);
+        
+        x_strikes.push_back(x_hit * cordMultiplier);
+        y_strikes.push_back(y_hit * cordMultiplier);
+        /*
         x_strikes.push_back(x_hit);
         y_strikes.push_back(y_hit);
-        IUtils::debugOutput("LASER HIT: " + toString(x_hit, y_hit), DEBUG_LASER_UTILS, "LaserOutput", 50);
+         */
+        IUtils::debugOutput("LASER HIT: " + toString(y_hit, x_hit), DEBUG_LASER_UTILS, "LaserOutput", 50);
       }
 
     }//end for loopcallback
@@ -379,8 +404,159 @@ namespace IUtils {
 
   } //end get Laser Hits
 
+  const static bool DEBUG_XY_TO_SET = true;
+
+  /*
+   * Function to reduce double x/y vectors into int x/y set
+   */
+  std::set<std::pair<int, int> > vectorsToSet
+  (const std::vector<double>& x, const std::vector<double>& y)
+  {
+    std::set < std::pair<int, int> > setOutput;
+    for (int i = 0; i < x.size(); i++) {
+      std::pair<int, int> cords = std::make_pair(x[i], y[i]);
+
+      setOutput.insert(cords);
+    }
+
+    int sizeIn = x.size();
+    int sizeOut = setOutput.size();
+    debugOutput("Reduced x/y vector of size: "
+            + toString(sizeIn) + " to size: " + toString(sizeOut) + " set", DEBUG_XY_TO_SET);
+    return setOutput;
+  }
+
 
 }; //END UTILS
+
+namespace IGUI {
+  //This depends on having IUtils
+  using namespace IUtils;
+  using namespace std;
+  //Holds all the publishers
+  ros::Publisher drawLinePub;
+  ros::Publisher drawTextPub;
+  ros::Publisher drawPLinePub;
+  ros::Publisher drawPTextPub;
+
+  /**
+   * Sets up all the publishers
+   */
+  void setupGUI(ros::NodeHandle n)
+  {
+    drawLinePub = n.advertise<inhaler_gui::draw_line>("inhalerGUI_Line", 1);
+    drawTextPub = n.advertise<inhaler_gui::draw_text>("inhalerGUI_Text", 1);
+    drawPLinePub = n.advertise<inhaler_gui::draw_line_p>("inhalerGUI_PLine", 1);
+    drawPTextPub = n.advertise<inhaler_gui::draw_text_p>("inhalerGUI_PText", 1);
+  }
+
+  void drawLine(double x1, double y1, double x2, double y2)
+  {
+    inhaler_gui::draw_line msg;
+    msg.x1 = x1;
+    msg.y1 = y1;
+    msg.x2 = x2;
+    msg.y2 = y2;
+
+    drawLinePub.publish(msg);
+  }
+
+  void drawText(double x, double y, int textSize, std::string text)
+  {
+    inhaler_gui::draw_text msg;
+    msg.x = x;
+    msg.y = y;
+    msg.textSize = textSize;
+    msg.text = text;
+    drawTextPub.publish(msg);
+  }
+  
+  void drawPText(double x,double y, std::string text , std::string id) {
+    inhaler_gui::draw_text_p msg;
+    msg.x = x;
+    msg.y = y;
+    msg.textSize = 10;
+    msg.text = text;
+    msg.id = id;
+    drawPTextPub.publish(msg);
+  }
+  void drawPText(double x,double y, double textSize, std::string text , std::string id) {
+    inhaler_gui::draw_text_p msg;
+    msg.x = x;
+    msg.y = y;
+    msg.textSize = textSize;
+    msg.text = text;
+    msg.id = id;
+    drawPTextPub.publish(msg);
+  }
+  
+  //IGUI custom gui objects!
+  
+  class PTextGrid {
+  public:
+    //datastructures
+    map<pair<int,int>,std::string> data;
+    int distSeperationX;
+    int distSeperationY;
+    int startX,startY;
+    int textSize;
+    std::string prefix;
+    std::set<pair<int,int> > updated;
+    //default constructor
+    PTextGrid() {
+      //default values
+      textSize = 10;
+      distSeperationX = 20;
+      distSeperationY = textSize+2;
+      startX = 100;
+      startY = 100;
+      prefix = "pTextGrid_";
+    }
+    
+    string genID(int x, int y) {
+      string id = prefix + toString(x,y);
+      return id;
+    }
+    void addTextValue(int x, int y, std::string text) {
+      
+      pair<int,int> cord = std::make_pair(x,y);
+      //search
+      std::map<pair<int,int>,string>::iterator it = data.find(cord);
+      if (it != data.end()) {
+        //found
+        if ((*it).second.compare(text)!=0) {
+          //text is actually different.
+          data[cord] = text;
+          updated.insert(cord);
+        }
+        
+      } else {
+        //not found
+        data[cord] = text;
+        updated.insert(cord);
+      }
+      
+      
+    }
+    
+    void drawUpdated() {
+      //iterate over updated set, send anything that was updated.
+      set<pair<int,int> >::iterator cordIt;
+      for (cordIt = updated.begin();cordIt!=updated.end();cordIt++) {
+        //draw
+        int x = (*cordIt).first;
+        int y = (*cordIt).second;
+        int xText = startX + x*distSeperationX;
+        int yText = startY + y*distSeperationY;
+        string id = genID(x,y);
+        string text = data[*cordIt];
+        IGUI::drawPText(xText,yText,textSize,text,id);
+      }
+    }
+    
+  };
+
+}//end GUI code
 
 namespace IUtilsUnitTests {
   using namespace IUtils;
@@ -406,6 +582,48 @@ namespace IUtilsUnitTests {
       IUtils::debugOutput(IUtils::toString(cellX) + " , " + IUtils::toString(cellY), true);
     }
   }
+
+  void testXYVectorToSet()
+  {
+    std::vector<double> x_vector;
+    std::vector<double> y_vector;
+    for (int i = 0; i < 100; i++) {
+      double x = i / 10;
+      double y = i / 10 % 10;
+      x_vector.push_back(x);
+      y_vector.push_back(y);
+    }
+    std::set< std::pair<int, int> > setOut = vectorsToSet(x_vector, y_vector);
+  }
+
+  /*
+      ros::Publisher drawLinePub;
+      void setupTests(ros::NodeHandle n) {
+        
+    drawLinePub = n.advertise<inhaler_gui::draw_line>("inhalerGUI_Line",1);
+      }
+  void testInhalerGUI() {
+    inhaler_gui::draw_line  msg;
+    msg.x1 = 120.1;
+    msg.y1 = 500.1;
+    msg.x2 = 500.1;
+    msg.y2 = 120.1;
+    
+    double x1Out = msg.x1;
+    
+    IUtils::debugOutput("Publishing on: " + drawLinePub.getTopic()
+    + " subscribers: " + toString(drawLinePub.getNumSubscribers())
+    + " Latched: " + toString(drawLinePub.isLatched())
+    + " x1: " + toString(x1Out),true);
+    
+    drawLinePub.publish (msg);
+  }
+   */
+  void testInhalerGUI2()
+  {
+    //IGUI::drawText(10, 10, 12, "Inhaler GUI Text Test.");
+    IGUI::drawPText(10, 10, "Inhaler GUI Text Test.","iGuiTestId");
+  }
 }
 
 using namespace boost::posix_time;
@@ -419,8 +637,8 @@ public:
   GridMapper(ros::NodeHandle& nh, int width, int height) :
   canvas(height, width, CV_8UC1)
   {
-    
-    
+
+
     // Initialize random time generator
     srand(time(NULL));
 
@@ -430,11 +648,7 @@ public:
     // only the last command will be sent)
     commandPub = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
 
-    // Subscribe to the current simulated robot's laser scan topic and
-    // tell ROS to call this->laserCallback() whenever a new message
-    // is published on that topic
-    laserSub = nh.subscribe("base_scan", 1, \
-      &GridMapper::laserCallback, this);
+
 
     // Subscribe to the current simulated robot' ground truth pose topic
     // and tell ROS to call this->poseCallback(...) whenever a new
@@ -442,13 +656,18 @@ public:
     poseSub = nh.subscribe("base_pose_ground_truth", 1, \
       &GridMapper::poseCallback, this);
 
+        // Subscribe to the current simulated robot's laser scan topic and
+    // tell ROS to call this->laserCallback() whenever a new message
+    // is published on that topic
+    laserSub = nh.subscribe("base_scan", 1, \
+      &GridMapper::laserCallback, this);
     // Create resizeable named window
     cv::namedWindow("Occupancy Grid Canvas", \
       CV_WINDOW_NORMAL | CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
-    
+
     //RANDOM WALK
     fsm = FSM_MOVE_FORWARD;
-    
+
   };
 
 
@@ -487,9 +706,18 @@ public:
     }
     canvasMutex.unlock();
   };
+  
+  char getCanvasValue(int x,int y) {
+    //canvasMutex.lock();
+    if (x >= 0 && x < canvas.cols && y >= 0 && y < canvas.rows) {
+      return canvas.at<char>(y, x);
+    }
+    //canvasMutex.unlock();
+  }
 
   // Send a velocity command
-
+  const static bool NO_LASER_ON_TURN = true;
+  bool lastTurnCycle;
   void move(double linearVelMPS, double angularVelRadPS)
   {
     geometry_msgs::Twist msg; // The default constructor will set all commands to 0
@@ -500,9 +728,56 @@ public:
 
 
   // Process incoming laser scan message
-
+  const static bool USE_SET = true;
+  bool firstLaser = true;
   void laserCallback(const sensor_msgs::LaserScan::ConstPtr& msg)
   {
+        //RANDOM WALK STUFF
+    if (USE_RANDOM_WALK) {
+
+
+
+      if (fsm == FSM_MOVE_FORWARD) {
+        double minRads = (MIN_SCAN_ANGLE_RAD - msg->angle_min) / msg->angle_increment;
+        double maxRads = (MAX_SCAN_ANGLE_RAD - msg->angle_min) / msg->angle_increment;
+        unsigned int minIndex = (int) ceil((minRads));
+        unsigned int maxIndex = ceil(maxRads);
+        float closestRange = 100000;
+        for (unsigned int currIndex = minIndex; currIndex < maxIndex; currIndex++) {
+          //std::cout<<"Loop Start!"<<std::endl;
+          if (msg->ranges[currIndex] < closestRange) {
+
+            //std::cout<<"Index Loop Internal!"<<std::endl;
+            closestRange = msg->ranges[currIndex];
+          }
+        }
+
+        if (closestRange <= PROXIMITY_RANGE_M) {
+          //rotation degrees
+          //180 plus/minus 20 degrees
+          //distribution centered around 180, should create
+          //a bell curve distribution.
+          int degreeRotation =
+                  STARTING_ANGLE + rand() % RANDOM_ANGLE - rand() % RANDOM_ANGLE;
+
+          double radRotation = (double) degreeRotation / 180 * M_PI;
+          //if you rotate at 1 rad per sec, then rotate for radRotation secs
+          double timeToRotate = radRotation / ROTATE_SPEED_RADPS;
+          fsm = FSM_ROTATE;
+          rotateStartTime = ros::Time::now();
+          rotateDuration = ros::Duration(timeToRotate);
+
+        }
+
+      }
+
+    }//end random walk code
+    
+    if (this->x==0 && this->y==0 || firstLaser || (NO_LASER_ON_TURN && (fsm==FSM_ROTATE || lastTurnCycle))) {
+      firstLaser = false;
+      lastTurnCycle = false;
+      return;
+    }
     ROS_INFO_STREAM("Got laser callback");
     // TODO: parse laser data and update occupancy grid canvas
     //       (use CELL_OCCUPIED, CELL_UNKNOWN, CELL_FREE, and CELL_ROBOT values)
@@ -511,43 +786,70 @@ public:
     //get laser hits
     std::vector<double> x_strikes;
     std::vector<double> y_strikes;
+
     IUtils::getLaserHits(msg, x_strikes, y_strikes, x, y, heading);
-    for (int i = 0; i < x_strikes.size(); i++) {
-      double strike_x = x_strikes[i];
-      double strike_y = y_strikes[i];
-      int cell_x = strike_x;
-      int cell_y = strike_y;
 
-      //plot(cell_x, cell_y, CELL_OCCUPIED);
+    std::set< std::pair<int, int> > setOut = IUtils::vectorsToSet(x_strikes, y_strikes);
+    if (USE_SET) {
+      std::set<std::pair<int, int> >::iterator it;
+      for (it = setOut.begin(); it != setOut.end(); it++) {
+        std::pair<int, int> cord = *it;
 
+        if (PLOT_LASER)
+          plot(cord.first, cord.second, CELL_OCCUPIED);
 
-      //RANDOM WALK STUFF
-      if (USE_RANDOM_WALK) {
-
-
-
-        if (fsm == FSM_MOVE_FORWARD) {
-          double minRads = (MIN_SCAN_ANGLE_RAD - msg->angle_min) / msg->angle_increment;
-          double maxRads = (MAX_SCAN_ANGLE_RAD - msg->angle_min) / msg->angle_increment;
-          unsigned int minIndex = (int) ceil((minRads));
-          unsigned int maxIndex = ceil(maxRads);
-          float closestRange = 100000;
-          for (unsigned int currIndex = minIndex; currIndex < maxIndex; currIndex++) {
-            //std::cout<<"Loop Start!"<<std::endl;
-            if (msg->ranges[currIndex] < closestRange) {
-
-              //std::cout<<"Index Loop Internal!"<<std::endl;
-              closestRange = msg->ranges[currIndex];
+        IUtils::debugOutput("laser hit at: " + IUtils::toString(cord.first, cord.second), DEBUG_PLOT_LASER);
+        if (PLOT_LASER_EMPTY_SIMP) {
+          //hpot
+          double xAngle = cord.first - this->x*CELL_MULTIPLIER;
+          double yAngle = cord.second - this->y*CELL_MULTIPLIER;
+          //standarize
+          double hypotAngle = hypot(xAngle,yAngle);
+          double xAngleAdd = xAngle / hypotAngle;
+          double yAngleAdd = yAngle / hypotAngle;
+          //since this is less then 1, and this is simplistic
+          //we will step through this.
+          
+          //determine the number of steps
+          int steps = xAngle/xAngleAdd;
+          int stepsy = yAngle/yAngleAdd;
+          //this prioritizes something being considered an obstacle
+          //take the larger number of steps
+          if (stepsy > steps) {
+            steps = stepsy;
+          }
+          IUtils::debugOutput("steps: " + IUtils::toString(steps),true);
+          //hardcap at 1k to prevent inf loops.
+          for (int i=0;i<steps && i<1000;i++) {
+            int currX = this->x*CELL_MULTIPLIER + xAngleAdd*i;
+            int currY = this->y*CELL_MULTIPLIER + yAngleAdd*i;
+            //if possible, check if occupied
+            if (getCanvasValue(currX,currY)!= CELL_OCCUPIED) {
+            plot(currX,currY,CELL_FREE);
             }
+            
+            
           }
         }
+      }
+    } else {
+      for (int i = 0; i < x_strikes.size(); i++) {
+        double strike_x = x_strikes[i];
+        double strike_y = y_strikes[i];
+        int cell_x = strike_x;
+        int cell_y = strike_y;
+        if (PLOT_LASER)
+          plot(cell_x, cell_y, CELL_OCCUPIED);
 
-      }//end random walk code
-    }//end laser callback
+      }
+    }
 
 
 
-  };
+
+
+
+  }; //end laser callback
 
 
   // Process incoming ground truth robot pose message
@@ -576,13 +878,17 @@ public:
 
     while (ros::ok()) { // Keep spinning loop until user presses Ctrl+C
       // TODO: remove following demo code and make robot move around the environment
-      plot(x, y, CELL_ROBOT); // Demo code: plot robot's current position on canvas
+      //plot(x, y, CELL_ROBOT); // Demo code: plot robot's current position on canvas
+      /*
       plotImg(0, 0, CELL_OCCUPIED); // Demo code: plot different colors at 4 canvas corners
       plotImg(0, canvas.rows - 1, CELL_UNKNOWN);
       plotImg(canvas.cols - 1, 0, CELL_FREE);
       plotImg(canvas.cols - 1, canvas.rows - 1, CELL_ROBOT);
+       */
+      plot(x*CELL_MULTIPLIER, y*CELL_MULTIPLIER, CELL_ROBOT);
 
-      plot(x, y, CELL_FREE);
+      //IUtilsUnitTests::testInhalerGUI();
+      IUtilsUnitTests::testInhalerGUI2();
 
       if (USE_RANDOM_WALK) {
         if (fsm == FSM_MOVE_FORWARD) {
@@ -592,9 +898,10 @@ public:
           move(0, ROTATE_SPEED_RADPS);
           if (ros::Time::now() > rotateStartTime + rotateDuration) {
             fsm = FSM_MOVE_FORWARD;
-            ROS_INFO_STREAM("No longer rotating");
+            lastTurnCycle = true;
+            //ROS_INFO_STREAM("No longer rotating");
           } else {
-            ROS_INFO_STREAM("TIME LEFT: " << ros::Time::now() - (rotateStartTime + rotateDuration));
+            //ROS_INFO_STREAM("TIME LEFT: " << ros::Time::now() - (rotateStartTime + rotateDuration));
           }
 
         }
@@ -627,8 +934,11 @@ public:
 
   const static double MIN_SCAN_ANGLE_RAD = -45.0 / 180 * M_PI;
   const static double MAX_SCAN_ANGLE_RAD = +45.0 / 180 * M_PI;
-  const static float PROXIMITY_RANGE_M = 2;
-
+  const static float PROXIMITY_RANGE_M = 1;
+  const static bool PLOT_LASER = true;
+  const static bool PLOT_LASER_EMPTY_SIMP = true;
+  //simplistic plotting for empty cells
+  const static bool DEBUG_PLOT_LASER = true;
 
   const static int STARTING_ANGLE = 180;
   const static int RANDOM_ANGLE = 20;
@@ -639,6 +949,9 @@ public:
   const static char CELL_UNKNOWN = 86;
   const static char CELL_FREE = 172;
   const static char CELL_ROBOT = 255;
+
+  
+  
 
 
 protected:
@@ -666,15 +979,13 @@ const static bool ONLY_UNIT_TEST = false;
 
 int main(int argc, char **argv)
 {
-
+  
+  IUtils::cordMultiplier = CELL_MULTIPLIER;
   //UNIT TESTING
+  //unit tests
 
   IUtilsUnitTests::testConvertAngle();
-
-
-  if (ONLY_UNIT_TEST) {
-    return 0;
-  }
+  IUtilsUnitTests::testXYVectorToSet();
 
 
   int width, height;
@@ -704,8 +1015,25 @@ int main(int argc, char **argv)
 
   ros::init(argc, argv, "grid_mapper"); // Initiate ROS node
   ros::NodeHandle n; // Create default handle
+
+  //IUtilsUnitTests::setupTests(n);
+
+
+  //test inhaler gui
+  //IUtilsUnitTests::testInhalerGUI();
+  IGUI::setupGUI(n);
+
   GridMapper robbie(n, width, height); // Create new grid mapper object
-  robbie.spin(); // Execute FSM loop
+
+  if (ONLY_UNIT_TEST) {
+    ros::spinOnce();
+
+    return 0;
+  } else {
+    robbie.spin(); // Execute FSM loop
+  }
+
+
 
   return EXIT_SUCCESS;
 };
